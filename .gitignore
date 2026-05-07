@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Project artifacts — keep parquet (small enough, needed by dashboard for instant loads)
+# Exclude only the heavy joblib model files (regenerated on demand)
+data_cache/*.joblib
+data_cache/_chart_tmp/
+
+# Pipeline run logs
+pipeline_run.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Streamlit
+.streamlit/secrets.toml

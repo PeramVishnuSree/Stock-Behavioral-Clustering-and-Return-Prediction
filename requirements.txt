@@ -1,0 +1,22 @@
+# ── Data & math ──
+pandas>=2.0
+numpy>=1.24
+pyarrow>=14.0          # parquet I/O for cache layer
+
+# ── Data sources ──
+yfinance>=0.2.40
+requests>=2.31
+
+# ── Machine learning ──
+scikit-learn>=1.3
+xgboost>=2.0
+joblib>=1.3            # model persistence
+scipy>=1.11
+
+# ── Visualization ──
+plotly>=5.20
+matplotlib>=3.8        # for sklearn dendrogram
+seaborn>=0.13
+
+# ── Dashboard ──
+streamlit>=1.32
