@@ -280,34 +280,34 @@ def slide_04_research_question(prs, D):
 
 def slide_05_motivation(prs):
     s = _new_slide(prs)
-    _add_header(s, "01 · MOTIVATION", "The 2023–24 AI boom — a real-world example of the gap",
+    _add_header(s, "01 · MOTIVATION", "The AI boom — a real-world example of the cross-sector gap",
                   "When a single narrative dominates, sectors stop describing behavior")
-    # Three example pairs
+    # Three example pairs — corrected return numbers
     pairs = [
-        ("NVDA", "Information Technology", "+239%", BLUE),
-        ("CEG (Constellation Energy)", "Utilities", "+148%", AMBER),
-        ("VST (Vistra)", "Utilities", "+260%", GREEN),
+        ("NVDA (Nvidia)",            "Information Technology", "+239%", "2023", BLUE),
+        ("CEG (Constellation Energy)", "Utilities",              "+93%",  "2024", AMBER),
+        ("VST (Vistra)",              "Utilities",              "+258%", "2024", GREEN),
     ]
-    _add_textbox(s, "Three stocks that moved together for the same reason — but live in different GICS sectors:",
+    _add_textbox(s, "Three stocks that moved together for the same AI-infrastructure reason — across IT and Utilities sectors:",
                   Inches(0.5), Inches(2.0), Inches(12), Inches(0.5), 14, False, DGRAY)
     y = 2.7
-    for ticker, sector, ret, color in pairs:
+    for ticker, sector, ret, period, color in pairs:
         _add_filled_rect(s, Inches(0.6), Inches(y), Inches(12), Inches(0.9), WHITE, GRAY)
         _add_filled_rect(s, Inches(0.6), Inches(y), Inches(0.12), Inches(0.9), color)
-        _add_textbox(s, ticker, Inches(0.85), Inches(y + 0.15), Inches(3.2), Inches(0.4),
+        _add_textbox(s, ticker, Inches(0.85), Inches(y + 0.15), Inches(3.6), Inches(0.4),
                       16, True, NAVY)
-        _add_textbox(s, sector, Inches(0.85), Inches(y + 0.5), Inches(3.2), Inches(0.4),
+        _add_textbox(s, sector, Inches(0.85), Inches(y + 0.5), Inches(3.6), Inches(0.4),
                       11, False, GRAY)
         _add_textbox(s, "Theme: AI compute & power demand",
-                      Inches(4.4), Inches(y + 0.3), Inches(5), Inches(0.4),
+                      Inches(4.7), Inches(y + 0.3), Inches(4.8), Inches(0.4),
                       12, False, DGRAY)
-        _add_textbox(s, ret, Inches(10.5), Inches(y + 0.25), Inches(1.9), Inches(0.4),
+        _add_textbox(s, ret, Inches(10.0), Inches(y + 0.25), Inches(2.4), Inches(0.4),
                       18, True, color, align=PP_ALIGN.RIGHT)
-        _add_textbox(s, "2023 return", Inches(10.5), Inches(y + 0.55), Inches(1.9), Inches(0.4),
+        _add_textbox(s, f"{period} calendar return", Inches(10.0), Inches(y + 0.55), Inches(2.4), Inches(0.4),
                       9, False, GRAY, align=PP_ALIGN.RIGHT)
         y += 1.05
     _add_textbox(s,
-        "GICS calls these three stocks completely different sectors. Their stocks behaved nearly identically.",
+        "Different GICS sectors (IT vs Utilities) — but their stocks rallied on the same macro narrative.",
         Inches(0.5), Inches(6.4), Inches(12), Inches(0.5), 12, True, BLUE, align=PP_ALIGN.CENTER)
     _add_footer(s, 5)
 
@@ -727,7 +727,7 @@ def slide_15_clustering_setup(prs):
 def slide_16_kmeans_diagnostics(prs, D):
     s = _new_slide(prs)
     _add_header(s, "07 · CLUSTERING", "Choosing K — elbow + silhouette",
-                  "Inertia drops sharply through K=4–6, silhouette peaks; K=5 is the chosen balance")
+                  "Silhouette peaks at K=2; we chose K=5 as an interpretability-driven compromise near the elbow")
 
     diag = D["diag"]
     fig = make_subplots(specs=[[{"secondary_y": True}]])
@@ -748,14 +748,18 @@ def slide_16_kmeans_diagnostics(prs, D):
 
     best_k = int(diag.iloc[diag["silhouette"].idxmax()]["k"])
     best_sil = float(diag["silhouette"].max())
+    sil_at_5 = float(diag.loc[diag["k"] == 5, "silhouette"].iloc[0])
     _add_filled_rect(s, Inches(9.2), Inches(2.0), Inches(3.6), Inches(4.5), LBLUE)
     _add_textbox(s, "Diagnostics", Inches(9.4), Inches(2.1),
                   Inches(3.4), Inches(0.4), 13, True, BLUE)
-    _add_metric_card(s, f"K = {best_k}", "Silhouette peak", Inches(9.4), Inches(2.6), Inches(3.2))
-    _add_metric_card(s, f"{best_sil:.3f}", "Peak silhouette score", Inches(9.4), Inches(3.85), Inches(3.2))
+    _add_metric_card(s, f"K = {best_k}", f"Silhouette peak ({best_sil:.3f})",
+                      Inches(9.4), Inches(2.6), Inches(3.2))
+    _add_metric_card(s, f"K = 5", f"Chosen (silhouette {sil_at_5:.3f})",
+                      Inches(9.4), Inches(3.85), Inches(3.2))
     _add_textbox(s,
-        "We use K = 5 — close to the peak with cleaner interpretability for sector comparison.",
-        Inches(9.4), Inches(5.1), Inches(3.4), Inches(1.3), 10, False, NAVY)
+        "K=2 maximizes silhouette but produces clusters too coarse for the 11-sector comparison. "
+        "K=5 trades silhouette for interpretability.",
+        Inches(9.4), Inches(5.1), Inches(3.4), Inches(1.4), 9, False, NAVY)
     _add_footer(s, 16)
 
 
@@ -945,12 +949,16 @@ def slide_20_classification_setup(prs, D):
 def slide_21_model_comparison(prs, D):
     s = _new_slide(prs)
     _add_header(s, "08 · CLASSIFICATION — RESULT", "Model comparison: ROC-AUC with vs without cluster",
-                  "Does the behavioral cluster label add predictive signal?")
+                  "Cluster label adds a small but consistent AUC lift across all 4 models")
 
     metrics = D["metrics"]
+    cluster_col = [c for c in metrics["variant"].unique() if "luster" in c and "ithout" not in c][0]
+    no_cluster_col = [c for c in metrics["variant"].unique() if "ithout" in c][0]
+
+    color_map = {no_cluster_col: "#6C757D", cluster_col: "#2E6DA4"}
     fig = px.bar(metrics, x="model", y="roc_auc", color="variant", barmode="group",
-                  color_discrete_map={"Without cluster": "#6C757D", "With cluster": "#2E6DA4"})
-    fig.update_yaxes(title="ROC-AUC", range=[0.45, max(0.7, metrics["roc_auc"].max() + 0.05)],
+                  color_discrete_map=color_map)
+    fig.update_yaxes(title="ROC-AUC", range=[0.45, max(0.55, metrics["roc_auc"].max() + 0.02)],
                       showgrid=True, gridcolor="#F4F6F9")
     fig.update_xaxes(title="")
     fig.update_layout(plot_bgcolor="white", paper_bgcolor="white", height=460,
@@ -962,18 +970,21 @@ def slide_21_model_comparison(prs, D):
     # Right panel: best model + delta
     best = metrics.sort_values("roc_auc", ascending=False).iloc[0]
     pivot = metrics.pivot(index="model", columns="variant", values="roc_auc")
-    pivot["delta"] = pivot["With cluster"] - pivot["Without cluster"]
+    pivot["delta"] = pivot[cluster_col] - pivot[no_cluster_col]
     avg_delta = float(pivot["delta"].mean())
     n_improved = int((pivot["delta"] > 0).sum())
 
     _add_filled_rect(s, Inches(9.2), Inches(2.0), Inches(3.6), Inches(4.5), LBLUE)
-    _add_textbox(s, "Best model", Inches(9.4), Inches(2.1),
+    _add_textbox(s, "Best ROC-AUC", Inches(9.4), Inches(2.1),
                   Inches(3.4), Inches(0.4), 13, True, BLUE)
     _add_metric_card(s, f"{best['roc_auc']:.3f}", f"{best['model']}", Inches(9.4), Inches(2.55), Inches(3.2))
-    _add_textbox(s, "ROC-AUC delta (avg)",
+    _add_textbox(s, "AUC delta (avg)",
                   Inches(9.4), Inches(3.85), Inches(3.4), Inches(0.4), 11, True, BLUE)
     _add_metric_card(s, f"{avg_delta:+.4f}", f"{n_improved}/4 models improved",
                       Inches(9.4), Inches(4.25), Inches(3.2))
+    _add_textbox(s,
+        "AUC barely above 0.5 — weak ranking signal, consistent with weak-form market efficiency.",
+        Inches(9.4), Inches(5.5), Inches(3.4), Inches(1.0), 9, False, NAVY)
     _add_footer(s, 21)
 
 
@@ -1019,16 +1030,17 @@ def slide_23_results(prs, D):
     metrics = D["metrics"]
     cmetrics = D["cmetrics"]
     baseline = D["baseline"]
-    best = metrics.sort_values("roc_auc", ascending=False).iloc[0]
+    best_auc = metrics.sort_values("roc_auc", ascending=False).iloc[0]
+    best_acc = metrics.sort_values("accuracy", ascending=False).iloc[0]
     ari = float(cmetrics.loc[cmetrics["algorithm"] == "kmeans", "ari_vs_sector"].iloc[0])
 
     cards = [
         (f"{D['fact']['ticker'].nunique()}", "Tickers analyzed"),
         (f"{len(D['fact']):,}", "Stock-day rows"),
         (f"{ari:.3f}", "ARI (clusters vs GICS)"),
-        (f"{best['roc_auc']:.3f}", f"Best ROC-AUC ({best['model']})"),
-        (f"{best['accuracy']:.3f}", "Best accuracy"),
-        (f"{baseline:.3f}", "Naive baseline"),
+        (f"{best_auc['roc_auc']:.3f}", f"Best ROC-AUC ({best_auc['model']})"),
+        (f"{best_acc['accuracy']:.3f}", "Best accuracy"),
+        (f"{baseline:.3f}", "Test baseline (always-up)"),
     ]
     for i, (val, label) in enumerate(cards):
         x = 0.5 + (i % 3) * 4.3
@@ -1039,15 +1051,16 @@ def slide_23_results(prs, D):
         _add_textbox(s, label, Inches(x), Inches(y + 0.95), Inches(4.0), Inches(0.4),
                       12, False, GRAY, align=PP_ALIGN.CENTER)
 
-    # Take-home banner
+    # Take-home banner — corrected wording
     _add_filled_rect(s, Inches(0.5), Inches(5.4), Inches(12.3), Inches(1.5), NAVY)
     _add_textbox(s, "Take-home", Inches(0.7), Inches(5.55),
                   Inches(12), Inches(0.4), 14, True, RGBColor(0xA8, 0xC8, 0xE8))
     _add_textbox(s,
-        f"Behavioral clusters genuinely diverge from GICS sectors (ARI = {ari:.3f}). The best model "
-        f"({best['model']}) beats the naive baseline by {(best['accuracy']-baseline)*100:+.1f}% accuracy "
-        "— modest but meaningful given weak-form efficient market expectations. Cluster label provides a small marginal lift.",
-        Inches(0.7), Inches(5.95), Inches(12), Inches(0.9), 12, False, WHITE)
+        f"Behavioral clusters show weak alignment with GICS sectors (ARI = {ari:.3f}). Best ROC-AUC of "
+        f"{best_auc['roc_auc']:.3f} is slightly above random ranking, but best accuracy ({best_acc['accuracy']:.3f}) "
+        f"is below the test baseline ({baseline:.3f}) — models do NOT beat the directional baseline. "
+        "Consistent with weak-form market efficiency. Cluster label gives a small AUC lift.",
+        Inches(0.7), Inches(5.95), Inches(12), Inches(0.9), 11, False, WHITE)
     _add_footer(s, 23)
 
 
@@ -1058,18 +1071,21 @@ def slide_24_conclusions(prs, D):
     cmetrics = D["cmetrics"]
     metrics = D["metrics"]
     baseline = D["baseline"]
-    best = metrics.sort_values("roc_auc", ascending=False).iloc[0]
+    best_auc = metrics.sort_values("roc_auc", ascending=False).iloc[0]
+    best_acc = metrics.sort_values("accuracy", ascending=False).iloc[0]
     ari = float(cmetrics.loc[cmetrics["algorithm"] == "kmeans", "ari_vs_sector"].iloc[0])
     pivot = metrics.pivot(index="model", columns="variant", values="roc_auc")
-    avg_delta = float((pivot["With cluster"] - pivot["Without cluster"]).mean())
+    cluster_col = [c for c in pivot.columns if "luster" in c and "ithout" not in c][0]
+    no_cluster_col = [c for c in pivot.columns if "ithout" in c][0]
+    avg_delta = float((pivot[cluster_col] - pivot[no_cluster_col]).mean())
 
     findings = [
-        ("Finding 1", "Behavioral clusters ≠ GICS sectors",
-         f"ARI = {ari:.3f}. Clusters group stocks by risk profile (growth, defensive, cyclical), not by industry. The official taxonomy hides this structural lens.", BLUE),
-        ("Finding 2", "Short-term direction prediction is hard but not impossible",
-         f"Best ROC-AUC: {best['roc_auc']:.3f}, accuracy: {best['accuracy']:.3f}. Above the {baseline:.3f} naive baseline. Aligns with weak-form market efficiency — technicals contain real but small signal.", AMBER),
-        ("Finding 3", "Cluster label adds marginal but real predictive value",
-         f"Adding the cluster label changed average ROC-AUC by {avg_delta:+.4f}. It's partially redundant with technicals, but still validates the two-part design.", GREEN),
+        ("Finding 1", "Behavioral clusters show weak alignment with GICS sectors",
+         f"ARI = {ari:.3f} (near 0 = random alignment). Clusters group stocks by risk profile (growth, defensive, cyclical) rather than industry. The official taxonomy does not capture this structural lens. RQ1 supported.", BLUE),
+        ("Finding 2", "Models do NOT beat the naive baseline on accuracy",
+         f"Best ROC-AUC = {best_auc['roc_auc']:.3f} — slightly above random ranking. Best accuracy = {best_acc['accuracy']:.3f}, BELOW the test-set always-up baseline of {baseline:.3f}. Weak ranking signal exists but cannot translate into directional accuracy. Consistent with weak-form market efficiency.", AMBER),
+        ("Finding 3", "Cluster label adds a small AUC lift",
+         f"Adding one-hot encoded cluster labels changed average ROC-AUC by {avg_delta:+.4f}. Lift is consistent but small; warrants statistical significance testing in future work before any operational use.", GREEN),
     ]
     y = 1.8
     for tag, title, desc, color in findings:

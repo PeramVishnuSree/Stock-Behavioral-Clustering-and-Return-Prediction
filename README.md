@@ -54,7 +54,7 @@ Artifacts land in `data_cache/`:
 
 | File | Contents |
 |---|---|
-| `fact_table.parquet` | Long-format stock-day fact table (~640K rows) |
+| `fact_table.parquet` | Long-format stock-day fact table (~743K rows; 503 → 501 tickers after delisting drops) |
 | `sp500_table.parquet` | Ticker → GICS sector mapping |
 | `market_returns.parquet` | Daily S&P 500 index returns |
 | `technical_features.parquet` | Per-day RSI, MACD, Bollinger, ATR, OBV, beta, vol |
@@ -92,11 +92,22 @@ The app opens at `http://localhost:8501` with five pages:
 
 - **Cluster on excess (market-adjusted) returns**, not raw returns — strips away the
   systemic market component and prevents the AI-boom factor from distorting clusters.
-- **Aggregate per-stock fingerprints over the full 5-year window** — captures structural
-  character that persists across regimes (pre-COVID, COVID crash, recovery, rate hikes, AI boom).
-- **Temporal train/test split** (2019–2022 / 2023–2024) — never random shuffle on time series.
+- **Train-only behavioral fingerprints** — fingerprints aggregate the 2019–2022 window only,
+  preventing data leakage when the cluster label is later used as a classification feature
+  on the 2023–2024 test set. Run `python fix_leakage_and_baseline.py` after `pipeline.py`
+  to regenerate clusters and classification metrics with the leakage-free, one-hot-encoded variant.
+- **Temporal train/test split** (years < 2023 / 2023–2024) — never random shuffle on time series.
+- **One-hot encode the cluster label** for classification — cluster IDs are nominal, not ordinal.
 - **Price-normalize technical features** before classification so high-priced stocks
   don't dominate the model.
+- **Test-set baseline** — the naive "always-up" baseline is computed on the test set only
+  (2023–2024), which is the comparison the model has to beat to be meaningful.
 - **Cache aggressively with parquet** — pipeline runs once, dashboard reads forever.
 
-See the **Methodology** page in the dashboard for full rationale.
+### Ticker count reconciliation
+
+- **503** tickers scraped from Wikipedia
+- **501** tickers had usable price data (2 delisted: SNDK, Q)
+- **495** tickers survived training-window fingerprint requirements for clustering
+
+See the **Methodology** page in the dashboard for full rationale, and `REPORT.md` for detailed results.

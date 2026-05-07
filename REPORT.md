@@ -7,12 +7,14 @@ Vishnu Peram · San José State University · Spring 2026
 
 ## Executive Summary
 
-This project tests whether S&P 500 stocks form data-driven behavioral clusters that diverge from their official GICS sector labels, and whether those cluster labels improve short-term return prediction. We processed **743,837 stock-day observations** spanning **501 stocks × 2188 calendar days** (2019-01-03 → 2024-12-30) across **11 GICS sectors**, computed 8 technical indicators and a 7-feature behavioral fingerprint per stock, fit three clustering algorithms, and trained four classification models with and without the cluster label as a feature.
+This project tests whether S&P 500 stocks form data-driven behavioral clusters that diverge from their official GICS sector labels, and whether those cluster labels improve short-term return prediction. We processed **743,837 stock-day observations** spanning **501 stocks** (2019-01-03 → 2024-12-30) across **11 GICS sectors**, computed 8 technical indicators and a 7-feature behavioral fingerprint per stock, fit three clustering algorithms, and trained four classification models — each in two variants: with and without **one-hot-encoded** cluster labels.
+
+**Methodological note on data leakage.** Behavioral fingerprints used for clustering are computed using **only the training-period window (2019–2022)**. The test set (2023–2024) is never observed during cluster fitting, so the cluster label is a leakage-free per-stock attribute when used as a feature in the classification step.
 
 **Key findings:**
-- **Behavioral clusters cut across GICS sectors.** Adjusted Rand Index = **0.045** (0 = independent, 1 = identical). Cluster groupings reflect risk archetypes (growth, defensive, cyclical) more than industry membership.
-- **Best classifier: XGBoost (With cluster)** with ROC-AUC = **0.514** and accuracy = **0.528**, beating the naive 'always-up' baseline of 0.542.
-- **Cluster label provides marginal lift.** Adding the behavioral cluster label as a feature changed average ROC-AUC by **+0.0093** across the 4 models; 4 of 4 models improved with the feature.
+- **Behavioral clusters show weak alignment with GICS sectors.** Adjusted Rand Index = **0.045** (near 0 = close to random agreement; 1 = identical). Cluster groupings reflect risk archetypes (growth, defensive, cyclical) more than industry membership.
+- **ROC-AUC is weakly above random.** Best ROC-AUC = **0.507** (Decision Tree, With cluster (one-hot)). The best accuracy across all models is **0.533** (Logistic Regression), which is **below** the test-set always-up baseline of **0.538**. Models therefore have weak ranking signal but do not outperform a naive directional baseline on accuracy.
+- **Cluster label gives a small marginal lift.** Adding one-hot-encoded cluster labels changed average ROC-AUC by **+0.0049** across the 4 models (4/4 models improved). The lift is consistent but small, and would warrant statistical-significance bounds before any operational use.
 
 ---
 
@@ -27,15 +29,15 @@ This project tests whether S&P 500 stocks form data-driven behavioral clusters t
 
 ### 1.2 Why this matters
 
-GICS sectors classify companies by *what they do* (their primary business activity), not by *how their stocks behave*. During macro narratives like the 2023–2024 AI boom, otherwise unrelated stocks moved together purely because of shared factor exposure — semiconductor companies, utilities with data-center exposure, and real estate trusts all rallied on the same theme. The official taxonomy hides this. A data-driven clustering can reveal it.
+GICS sectors classify companies by *what they do* (their primary business activity), not by *how their stocks behave*. During macro narratives like the 2023–2024 AI boom, otherwise unrelated stocks moved together due to shared factor exposure — semiconductor companies, utilities with data-center exposure, and infrastructure providers all rallied on the same theme. The official taxonomy hides this. A data-driven clustering can reveal it.
 
 ### 1.3 Pipeline overview
 
 ```
 Wikipedia + Yahoo Finance  →  fact_table (long format)
-fact_table                 →  technical_features  +  behavioral_fingerprints
-fingerprints               →  KMeans / Hierarchical / DBSCAN clusters
-technicals + cluster label →  4 classifiers (with vs without cluster)
+fact_table                 →  technical_features  +  behavioral_fingerprints (TRAIN ONLY)
+fingerprints (train-only)  →  KMeans / Hierarchical / DBSCAN clusters
+technicals + cluster (OHE) →  4 classifiers (with vs without cluster)
 all artifacts              →  Streamlit dashboard
 ```
 
@@ -47,11 +49,19 @@ all artifacts              →  Streamlit dashboard
 
 | Source | Provides | Access |
 |---|---|---|
-| Yahoo Finance (yfinance) | OHLCV daily prices, volumes for all S&P 500 tickers + index | Free, no API key |
+| Yahoo Finance (`yfinance`) | OHLCV daily prices, volumes for all S&P 500 tickers + index | Free, no API key |
 | Wikipedia constituent list | Ticker symbols, GICS sector & sub-industry, date added | `pd.read_html()` |
 | ^GSPC index | S&P 500 daily benchmark used to compute excess returns | Yahoo Finance |
 
-### 2.2 Warehouse design — Star schema
+*Data pull date: 2026-04-30. Time range: 2019-01-03 → 2024-12-30.*
+
+### 2.2 Ticker count reconciliation
+
+- **503 tickers** scraped from the Wikipedia constituent list
+- **501 tickers** with usable price data after yfinance download (2 delisted: SNDK, Q)
+- **495 tickers** survived fingerprint requirements for clustering (needed full training window of price history with no NaN in 7 fingerprint features)
+
+### 2.3 Warehouse design — Star schema
 
 **Fact table (`fact_table.parquet`)** — one row per (ticker, date):
 - OHLCV: `open, high, low, adj_close, volume`
@@ -59,8 +69,9 @@ all artifacts              →  Streamlit dashboard
 - Target: `forward_5day_return, forward_5day_direction`
 - Joined dimensions: `gics_sector, gics_sub_industry, company, date_added`
 
-**Dimension tables:**
-- `sp500_table` — ticker metadata (one row per ticker)
+**Dimension tables (logical):**
+- `stock_dim` — ticker metadata (one row per ticker; sourced from Wikipedia)
+- `time_dim` — derived from the `Date` column (year, quarter, etc.); not stored as a separate parquet
 - `technical_features` — per-stock-day technicals (RSI, MACD, Bollinger, ATR, OBV, beta, vol)
 - `fingerprints_raw / scaled` — one row per ticker, 7 behavioral features
 
@@ -88,11 +99,12 @@ all artifacts              →  Streamlit dashboard
 - Behavioral fingerprint features winsorized at 1st/99th percentile to keep clustering stable
 - Daily return outliers retained for prediction (genuine signal)
 
-### 3.4 Feature scaling
+### 3.4 Feature scaling & encoding
 
 - Fingerprints standardized via `StandardScaler` before clustering (distance-based methods need this)
-- Price-level features (MAs, Bollinger bands) divided by `adj_close` to make them ratios — otherwise they'd dominate by raw price magnitude
+- Price-level features (MAs) divided by `adj_close` to make them ratios — otherwise they'd dominate by raw price magnitude
 - Volume and OBV log-transformed (orders of magnitude variation)
+- **Cluster label is one-hot encoded** before classification — cluster IDs are nominal, not ordinal, so raw integer encoding would inappropriately impose order on logistic regression and tree-split candidates
 
 ---
 
@@ -111,19 +123,19 @@ all artifacts              →  Streamlit dashboard
 | Beta(60d) | Risk | Cov(stock, market) / Var(market), 60-day window | Market sensitivity |
 | Volatility(20d) | Risk | Rolling std of returns | Recent volatility |
 
-### 4.2 Behavioral fingerprint (per stock, 5-year aggregate)
+### 4.2 Behavioral fingerprint (per stock — TRAIN-ONLY aggregate)
 
-Each stock collapses into a single 7-feature vector for clustering:
+**To prevent data leakage**, each stock's fingerprint is computed using only the training-period window (2019–2022). The test period (2023–2024) is never seen during fingerprint construction or cluster fitting.
 
-| Feature              | What it captures                                               |
-|:---------------------|:---------------------------------------------------------------|
-| mean_excess_return   | Average alpha — outperformance vs. the market                  |
-| volatility           | Std dev of daily excess returns — calm vs. wild                |
-| mean_beta            | 60-day rolling beta averaged over 5 years — market sensitivity |
-| mean_rsi             | Average RSI level — momentum tendency                          |
-| mean_bollinger_width | Average band width — typical volatility regime                 |
-| max_drawdown         | Worst peak-to-trough loss — tail risk                          |
-| momentum_score       | Average rolling 12-month return — trend behavior               |
+| Feature              | What it captures                                                       |
+|:---------------------|:-----------------------------------------------------------------------|
+| mean_excess_return   | Average alpha — outperformance vs. the market                          |
+| volatility           | Std dev of daily excess returns — calm vs. wild                        |
+| mean_beta            | 60-day rolling beta averaged over training window — market sensitivity |
+| mean_rsi             | Average RSI level — momentum tendency                                  |
+| mean_bollinger_width | Average band width — typical volatility regime                         |
+| max_drawdown         | Worst peak-to-trough loss — tail risk                                  |
+| momentum_score       | Average rolling 12-month return — trend behavior                       |
 
 ---
 
@@ -134,72 +146,74 @@ Each stock collapses into a single 7-feature vector for clustering:
 K-Means was fit for K=2..15 with `n_init=10`, random_state=42. Diagnostics:
 |   k |   inertia |   silhouette |
 |----:|----------:|-------------:|
-|   2 |  2247.59  |        0.419 |
-|   3 |  1793.98  |        0.308 |
-|   4 |  1449.88  |        0.263 |
-|   5 |  1247.46  |        0.254 |
-|   6 |  1058.31  |        0.268 |
-|   7 |   956.711 |        0.247 |
-|   8 |   893.707 |        0.235 |
-|   9 |   830.768 |        0.23  |
-|  10 |   781.569 |        0.228 |
-|  11 |   737.233 |        0.223 |
-|  12 |   713.569 |        0.227 |
-|  13 |   685.613 |        0.213 |
-|  14 |   654.984 |        0.213 |
-|  15 |   626.768 |        0.204 |
+|   2 |  2334.31  |        0.393 |
+|   3 |  1819.7   |        0.342 |
+|   4 |  1479.07  |        0.276 |
+|   5 |  1223.01  |        0.256 |
+|   6 |  1085.39  |        0.251 |
+|   7 |   961.125 |        0.245 |
+|   8 |   895.876 |        0.226 |
+|   9 |   837.648 |        0.218 |
+|  10 |   788.391 |        0.216 |
+|  11 |   741.451 |        0.219 |
+|  12 |   709.822 |        0.214 |
+|  13 |   685.411 |        0.217 |
+|  14 |   661.78  |        0.216 |
+|  15 |   642.707 |        0.202 |
 
-Elbow + silhouette suggest **K = 2** is the best balance. We use **K = 5** in the final analysis (close to the silhouette peak with cleaner interpretability).
+**Silhouette peaks at K = 2 (0.393), but K = 5 was selected** as an interpretability-driven compromise near the elbow of the inertia curve. K = 2 produced clusters that were too coarse to compare meaningfully against the 11 GICS sectors; K = 5 gives finer granularity with silhouette = 0.256. The trade-off is documented explicitly: lower silhouette in exchange for more meaningful behavioral archetypes.
 
 ### 5.2 Algorithm comparison
 
 | algorithm    |   n_clusters |   n_outliers |   silhouette |   ari_vs_sector |
 |:-------------|-------------:|-------------:|-------------:|----------------:|
-| kmeans       |            5 |            0 |        0.253 |           0.045 |
-| hierarchical |            5 |            0 |        0.237 |           0.047 |
-| dbscan       |            2 |          124 |        0.393 |           0.011 |
+| kmeans       |            5 |            0 |        0.256 |           0.045 |
+| hierarchical |            5 |            0 |        0.285 |           0.026 |
+| dbscan       |            3 |          111 |        0.207 |           0.014 |
+
+*All three algorithms produced low ARI vs. GICS sectors, confirming the finding is structural rather than algorithm-dependent.*
 
 ### 5.3 Cluster vs. GICS sector — confusion matrix
 
 | gics_sector            |   0 |   1 |   2 |   3 |   4 |
 |:-----------------------|----:|----:|----:|----:|----:|
-| Communication Services |   6 |   4 |   3 |   1 |   9 |
-| Consumer Discretionary |  16 |  11 |   7 |   2 |  12 |
-| Consumer Staples       |   0 |   0 |  19 |   0 |  17 |
-| Energy                 |   3 |  13 |   1 |   1 |   3 |
-| Financials             |  21 |   6 |  28 |   1 |  20 |
-| Health Care            |   5 |   3 |  21 |   1 |  28 |
-| Industrials            |  24 |   5 |  32 |   3 |  14 |
-| Information Technology |  37 |   7 |   7 |   7 |  13 |
-| Materials              |   5 |   3 |   7 |   0 |  11 |
-| Real Estate            |   2 |   1 |   8 |   0 |  20 |
-| Utilities              |   2 |   1 |  23 |   1 |   4 |
+| Communication Services |   1 |   9 |   2 |   7 |   4 |
+| Consumer Discretionary |   5 |  16 |   7 |   4 |  16 |
+| Consumer Staples       |   0 |   4 |   0 |  26 |   5 |
+| Energy                 |  15 |   4 |   0 |   1 |   1 |
+| Financials             |   1 |  27 |   2 |  18 |  28 |
+| Health Care            |   4 |   7 |   1 |  25 |  20 |
+| Industrials            |   5 |  13 |   3 |  25 |  31 |
+| Information Technology |  14 |  19 |   2 |   6 |  30 |
+| Materials              |   6 |   6 |   0 |   9 |   5 |
+| Real Estate            |   0 |   9 |   0 |  17 |   5 |
+| Utilities              |   0 |   2 |   1 |  26 |   1 |
 
 Reading the matrix: rows are official GICS sectors, columns are behavioral clusters. If clustering recovered sector labels, we'd see one dominant column per row. Instead, sectors split across multiple clusters and clusters mix sectors — which is what the ARI = 0.045 score quantifies.
 
 ### 5.4 PCA visualization
 
-The 7-D fingerprint space projects onto 2 principal components capturing **87.0%** of total variance (PC1: 56.7%, PC2: 30.2%). Cluster regions are visually separable in this space — see dashboard.
+The 7-D fingerprint space projects onto 2 principal components capturing **85.3%** of total variance (PC1: 50.8%, PC2: 34.5%). Cluster regions are visually separable in this space — see dashboard.
 
 ### 5.5 Cluster sizes & profiles
 
 Cluster sizes (number of stocks per K-Means cluster):
 |   cluster |   size |
 |----------:|-------:|
-|         0 |    121 |
-|         1 |     54 |
-|         2 |    156 |
-|         3 |     17 |
-|         4 |    151 |
+|         0 |     51 |
+|         1 |    116 |
+|         2 |     18 |
+|         3 |    164 |
+|         4 |    146 |
 
 Cluster centroids on raw (un-normalized) behavioral features:
 |   kmeans |   mean_excess_return |   volatility |   mean_beta |   mean_rsi |   mean_bollinger_width |   max_drawdown |   momentum_score |
 |---------:|---------------------:|-------------:|------------:|-----------:|-----------------------:|---------------:|-----------------:|
-|        0 |               0.0005 |       0.0178 |      1.1825 |    54.4811 |                 0.1404 |        -0.5026 |           0.2987 |
-|        1 |               0.0002 |       0.0281 |      1.3359 |    51.6747 |                 0.1998 |        -0.7417 |           0.2003 |
-|        2 |               0      |       0.0138 |      0.6609 |    53.8093 |                 0.0985 |        -0.3794 |           0.1403 |
-|        3 |               0.0017 |       0.0344 |      1.6237 |    53.9274 |                 0.241  |        -0.7321 |           0.7813 |
-|        4 |              -0.0002 |       0.0174 |      0.8725 |    51.9109 |                 0.1259 |        -0.532  |           0.084  |
+|        0 |               0.0011 |       0.029  |      1.4028 |    53.4464 |                 0.2162 |        -0.6558 |           0.4932 |
+|        1 |              -0      |       0.0203 |      1.1117 |    51.9362 |                 0.1526 |        -0.57   |           0.1125 |
+|        2 |              -0.0005 |       0.0379 |      1.4819 |    49.3053 |                 0.2612 |        -0.816  |          -0.0914 |
+|        3 |               0.0001 |       0.015  |      0.6567 |    53.4573 |                 0.106  |        -0.3821 |           0.1143 |
+|        4 |               0.0005 |       0.0159 |      1.0588 |    54.6376 |                 0.1315 |        -0.4474 |           0.2587 |
 
 ---
 
@@ -208,63 +222,75 @@ Cluster centroids on raw (un-normalized) behavioral features:
 ### 6.1 Setup
 
 - **Target:** `forward_5day_direction` (1 = stock up over next 5 trading days, 0 = flat or down)
-- **Features (without cluster):** 14 technical indicators
-- **Features (with cluster):** 14 technical indicators + behavioral cluster label (one-hot effect via tree splits)
-- **Train / test split:** temporal — train on years < 2023, test on 2023–2024 (no random shuffling)
-- **Naive baseline (always predict up):** 0.542
+- **Features (without cluster):** 0 technical indicators (subset stored after compression)
+- **Features (with cluster):** technical indicators + **one-hot-encoded** cluster label (5 dummy variables, one per cluster)
+- **Train / test split:** temporal — train on years < 2023, test on 2023–2024
+- **Cluster fingerprints:** computed using **training-period data only** (no leakage into test)
+- **Naive baseline (always predict up, evaluated on test set):** **0.538** — any model has to beat this on accuracy to be useful as a directional predictor.
 
 ### 6.2 Model comparison
 
-| model               | variant         |   accuracy |   precision |   recall |     f1 |   roc_auc |
-|:--------------------|:----------------|-----------:|------------:|---------:|-------:|----------:|
-| Logistic Regression | Without cluster |     0.5329 |      0.537  |   0.9517 | 0.6866 |    0.4904 |
-| Decision Tree       | Without cluster |     0.5277 |      0.5381 |   0.8576 | 0.6613 |    0.4998 |
-| Random Forest       | Without cluster |     0.532  |      0.5392 |   0.892  | 0.6721 |    0.502  |
-| XGBoost             | Without cluster |     0.5254 |      0.5399 |   0.7933 | 0.6425 |    0.5046 |
-| Logistic Regression | With cluster    |     0.5322 |      0.5368 |   0.9461 | 0.685  |    0.5013 |
-| Decision Tree       | With cluster    |     0.5294 |      0.5386 |   0.8696 | 0.6652 |    0.5084 |
-| Random Forest       | With cluster    |     0.5332 |      0.5397 |   0.8955 | 0.6735 |    0.5102 |
-| XGBoost             | With cluster    |     0.5283 |      0.5429 |   0.776  | 0.6389 |    0.5141 |
+| model               | variant                |   accuracy |   precision |   recall |     f1 |   roc_auc |
+|:--------------------|:-----------------------|-----------:|------------:|---------:|-------:|----------:|
+| Logistic Regression | Without cluster        |     0.5329 |      0.537  |   0.9531 | 0.6869 |    0.4908 |
+| Decision Tree       | Without cluster        |     0.5308 |      0.5376 |   0.9093 | 0.6757 |    0.4998 |
+| Random Forest       | Without cluster        |     0.532  |      0.5395 |   0.8845 | 0.6702 |    0.503  |
+| XGBoost             | Without cluster        |     0.525  |      0.5398 |   0.7906 | 0.6415 |    0.5054 |
+| Logistic Regression | With cluster (one-hot) |     0.5305 |      0.537  |   0.9191 | 0.6779 |    0.4986 |
+| Decision Tree       | With cluster (one-hot) |     0.5272 |      0.5385 |   0.8428 | 0.6572 |    0.5071 |
+| Random Forest       | With cluster (one-hot) |     0.5282 |      0.5389 |   0.8485 | 0.6591 |    0.5061 |
+| XGBoost             | With cluster (one-hot) |     0.5211 |      0.5401 |   0.7357 | 0.6229 |    0.5067 |
+
+**Interpretation.** Best ROC-AUC is 0.507 (Decision Tree, With cluster (one-hot)) — barely above the random-ranking floor of 0.500. Best accuracy is 0.533 (Logistic Regression), **below** the always-up baseline of 0.538. Models extract some weak ranking signal (probabilities correctly order positive cases above negative slightly more often than chance) but cannot translate that into directional accuracy that beats simply predicting 'up'. This is consistent with weak-form efficient-market expectations.
 
 ### 6.3 With vs. without cluster — ROC-AUC delta
 
-| model               |   With cluster |   Without cluster |   delta |
-|:--------------------|---------------:|------------------:|--------:|
-| Decision Tree       |         0.5084 |            0.4998 |  0.0086 |
-| Logistic Regression |         0.5013 |            0.4904 |  0.0108 |
-| Random Forest       |         0.5102 |            0.502  |  0.0082 |
-| XGBoost             |         0.5141 |            0.5046 |  0.0096 |
+| model               |   With cluster (one-hot) |   Without cluster |   delta |
+|:--------------------|-------------------------:|------------------:|--------:|
+| Decision Tree       |                   0.5071 |            0.4998 |  0.0073 |
+| Logistic Regression |                   0.4986 |            0.4908 |  0.0078 |
+| Random Forest       |                   0.5061 |            0.503  |  0.0031 |
+| XGBoost             |                   0.5067 |            0.5054 |  0.0012 |
 
-Average ROC-AUC delta across models: **+0.0093**. 4 of 4 models improved when the cluster feature was added.
+Average ROC-AUC delta across models: **+0.0049**. 4 of 4 models improved when the one-hot cluster feature was added. The lift is small and consistent — likely capturing residual long-term behavioral structure that per-day technicals miss, but not large enough to claim economic significance without statistical-significance testing on the AUC differences.
 
-### 6.4 Feature importance (Random Forest, with cluster)
+### 6.4 Confusion matrices (test set)
+
+| model               | variant                |    tn |     fp |    fn |     tp |
+|:--------------------|:-----------------------|------:|-------:|------:|-------:|
+| Logistic Regression | Without cluster        |  5076 | 109589 |  6248 | 127082 |
+| Decision Tree       | Without cluster        | 10389 | 104276 | 12090 | 121240 |
+| Random Forest       | Without cluster        | 14013 | 100652 | 15403 | 117927 |
+| XGBoost             | Without cluster        | 24782 |  89883 | 27921 | 105409 |
+| Logistic Regression | With cluster (one-hot) |  9025 | 105640 | 10792 | 122538 |
+| Decision Tree       | With cluster (one-hot) | 18378 |  96287 | 20959 | 112371 |
+| Random Forest       | With cluster (one-hot) | 17858 |  96807 | 20204 | 113126 |
+| XGBoost             | With cluster (one-hot) | 31127 |  83538 | 35237 |  98093 |
+
+*All models lean toward predicting `up` (high recall, low specificity). Adding the cluster feature shifts the operating point slightly toward the negative class, reducing recall but improving the AUC ranking quality.*
+
+### 6.5 Feature importance (Random Forest, with cluster)
 
 | feature         |   importance |
 |:----------------|-------------:|
-| beta_60d        |       0.0962 |
-| volatility_20d  |       0.0846 |
-| ma_50           |       0.0762 |
-| obv             |       0.076  |
-| macd_hist       |       0.0699 |
-| bollinger_lower |       0.0689 |
-| atr_14          |       0.0675 |
-| bollinger_width |       0.0671 |
+| beta_60d        |       0.1084 |
+| volatility_20d  |       0.1006 |
+| obv             |       0.0929 |
+| ma_50           |       0.0914 |
+| bollinger_width |       0.0904 |
+| atr_14          |       0.0846 |
+| macd_hist       |       0.084  |
+| ma_20           |       0.0817 |
 
 ---
 
 ## 7. Knowledge Interpretation
 
-**Finding 1 — Behavioral clusters do not equal sectors.** ARI of 0.045 confirms the hypothesis. 
-Clusters group stocks by *risk profile* (high-volatility growth, low-volatility defensive, cyclicals) — 
-a structural lens GICS doesn't provide.
+**Finding 1 — Behavioral clusters show weak alignment with GICS sectors.** ARI of 0.045 is near zero, indicating cluster assignments and sector labels are close to randomly aligned. Clusters group stocks by *risk profile* (high-volatility growth, low-volatility defensive, cyclicals) — a structural lens GICS doesn't provide. RQ1 supported.
 
-**Finding 2 — Short-term direction prediction is hard.** Best ROC-AUC of 0.514 and accuracy of 0.528 
-are modestly above the 0.542 naive baseline. This aligns with weak-form efficient-market expectations: 
-technical indicators contain *some* signal but it's small and noisy at the daily horizon.
+**Finding 2 — Short-term direction prediction does not beat the naive baseline on accuracy.** Best accuracy (0.533) is below the always-up baseline (0.538). However, best ROC-AUC (0.507) is slightly above 0.5, indicating weak but non-zero ranking signal. This is consistent with weak-form market efficiency — technical indicators contain *some* signal but not enough to beat a directional-bias rule on a 5-day horizon.
 
-**Finding 3 — Cluster feature adds marginal value.** Average AUC delta of +0.0093 suggests behavioral cluster 
-information is partially redundant with technical indicators (they're computed from the same prices). It still 
-provides a modest lift, validating the two-part design.
+**Finding 3 — Cluster label adds small marginal AUC value.** Average AUC delta of +0.0049 with the cluster feature one-hot encoded. The lift is small and consistent across models, but future work should test it for statistical significance before any operational claims.
 
 ---
 
@@ -274,21 +300,19 @@ provides a modest lift, validating the two-part design.
 
 ```
 code/
-├── pipeline.py                  # orchestrator: data → features → clusters → models
-├── app.py                       # Streamlit landing page
-├── pages/                       # 5 dashboard pages
-│   ├── 1_📊_Data_Overview.py
-│   ├── 2_📈_EDA.py
-│   ├── 3_🎯_Clustering.py
-│   ├── 4_🔮_Prediction.py
-│   └── 5_📋_Methodology.py
+├── pipeline.py                    # orchestrator
+├── fix_leakage_and_baseline.py    # leakage-free re-clustering + classification
+├── make_report.py                 # generates REPORT.md from cache
+├── make_presentation.py           # generates PRESENTATION.pptx from cache
+├── app.py                         # Streamlit landing page
+├── pages/                         # 5 dashboard pages
 ├── src/
-│   ├── data.py                  # ETL
-│   ├── features.py              # technicals + fingerprints
-│   ├── clustering.py            # K-Means / Hierarchical / DBSCAN
-│   ├── classification.py        # 4 models, with/without cluster
-│   └── viz.py                   # Plotly chart helpers
-├── data_cache/                  # parquet cache of all artifacts
+│   ├── data.py                    # ETL
+│   ├── features.py                # technicals + fingerprints
+│   ├── clustering.py              # KMeans / Hierarchical / DBSCAN
+│   ├── classification.py          # 4 models
+│   └── viz.py                     # Plotly chart helpers
+├── data_cache/                    # parquet cache of all artifacts
 └── requirements.txt
 ```
 
@@ -296,17 +320,18 @@ code/
 
 - **Platform:** Streamlit Community Cloud (free tier)
 - **Repo:** `https://github.com/PeramVishnuSree/Stock-Behavioral-Clustering-and-Return-Prediction`
-- **Build:** Streamlit Cloud auto-installs `requirements.txt`, runs `app.py`
-- **Data:** Cached parquet files committed to repo for instant first-load (otherwise the pipeline would run on every cold start)
+- **Build:** auto-installs `requirements.txt`, runs `app.py`
+- **Data:** parquet files committed to repo for instant first-load
 
 ---
 
 ## 9. Limitations & Future Work
 
-- **Survivorship bias:** the constituent list is the *current* S&P 500. Past delistings are not in the panel.
-- **Static cluster labels:** behavioral fingerprints are aggregated over 5 years. A stock's behavior can shift across regimes (e.g., NVDA 2019 vs. 2024) — rolling-window clustering would capture this.
-- **Single forward horizon:** only 5-day direction tested. 1-day, 20-day, 60-day horizons would show whether technical signal strength varies with time scale.
+- **Survivorship bias:** the constituent list is the *current* S&P 500. Past delistings are not in the panel. Fix: use historical CRSP membership data.
+- **Static cluster labels:** behavioral fingerprints are aggregated over the training window. A stock's behavior can shift across regimes. Fix: rolling-window clustering with periodic re-fingerprinting.
+- **Single forward horizon:** only 5-day direction tested. Other horizons (1d, 20d, 60d) likely have different signal-to-noise.
 - **No transaction costs / position sizing:** ROC-AUC alone is not a Sharpe ratio. A backtest with realistic costs would assess economic significance.
+- **AUC lift not significance-tested:** the +0.0027 average AUC delta is consistent but small; bootstrap or DeLong tests would confirm whether it's statistically distinguishable from zero.
 - **Could add fundamentals or sentiment** (P/E, earnings surprise, news sentiment) as additional features.
 
 ---
@@ -318,10 +343,11 @@ git clone https://github.com/PeramVishnuSree/Stock-Behavioral-Clustering-and-Ret
 cd Stock-Behavioral-Clustering-and-Return-Prediction
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python pipeline.py        # ~5–10 min (downloads data + fits all models)
-streamlit run app.py      # opens dashboard at http://localhost:8501
+python pipeline.py                    # ~5–10 min: data + features + initial clustering/classification
+python fix_leakage_and_baseline.py    # ~30 sec: train-only clusters + one-hot classification
+streamlit run app.py                  # opens dashboard at http://localhost:8501
 ```
 
 ---
 
-*Report generated automatically from cached pipeline artifacts in `data_cache/`. All numbers reflect the actual training run.*
+*Report generated automatically from cached pipeline artifacts in `data_cache/`. All numbers reflect the actual training run with leakage-free clustering.*
