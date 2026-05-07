@@ -297,7 +297,8 @@ def main():
     md.append("## 6. Classification Results (RQ2)\n")
     md.append("### 6.1 Setup\n")
     md.append("- **Target:** `forward_5day_direction` (1 = stock up over next 5 trading days, 0 = flat or down)")
-    md.append(f"- **Features (without cluster):** {len([c for c in metrics.columns if c not in ['model','variant','accuracy','precision','recall','f1','roc_auc']])} technical indicators (subset stored after compression)")
+    md.append("- **Features (without cluster):** 11 technical indicators "
+              "(MA-20, MA-50, RSI, MACD, MACD-hist, Bollinger width, ATR, OBV, beta-60d, volatility-20d, volume)")
     md.append("- **Features (with cluster):** technical indicators + **one-hot-encoded** cluster label "
               "(5 dummy variables, one per cluster)")
     md.append("- **Train / test split:** temporal — train on years < 2023, test on 2023–2024")
@@ -385,7 +386,7 @@ def main():
     md.append("- **Static cluster labels:** behavioral fingerprints are aggregated over the training window. A stock's behavior can shift across regimes. Fix: rolling-window clustering with periodic re-fingerprinting.")
     md.append("- **Single forward horizon:** only 5-day direction tested. Other horizons (1d, 20d, 60d) likely have different signal-to-noise.")
     md.append("- **No transaction costs / position sizing:** ROC-AUC alone is not a Sharpe ratio. A backtest with realistic costs would assess economic significance.")
-    md.append("- **AUC lift not significance-tested:** the +0.0027 average AUC delta is consistent but small; bootstrap or DeLong tests would confirm whether it's statistically distinguishable from zero.")
+    md.append(f"- **AUC lift not significance-tested:** the {avg_delta:+.4f} average AUC delta is consistent but small; bootstrap or DeLong tests would confirm whether it's statistically distinguishable from zero.")
     md.append("- **Could add fundamentals or sentiment** (P/E, earnings surprise, news sentiment) as additional features.\n")
 
     md.append("---\n")

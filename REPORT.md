@@ -222,7 +222,7 @@ Cluster centroids on raw (un-normalized) behavioral features:
 ### 6.1 Setup
 
 - **Target:** `forward_5day_direction` (1 = stock up over next 5 trading days, 0 = flat or down)
-- **Features (without cluster):** 0 technical indicators (subset stored after compression)
+- **Features (without cluster):** 11 technical indicators (MA-20, MA-50, RSI, MACD, MACD-hist, Bollinger width, ATR, OBV, beta-60d, volatility-20d, volume)
 - **Features (with cluster):** technical indicators + **one-hot-encoded** cluster label (5 dummy variables, one per cluster)
 - **Train / test split:** temporal — train on years < 2023, test on 2023–2024
 - **Cluster fingerprints:** computed using **training-period data only** (no leakage into test)
@@ -331,7 +331,7 @@ code/
 - **Static cluster labels:** behavioral fingerprints are aggregated over the training window. A stock's behavior can shift across regimes. Fix: rolling-window clustering with periodic re-fingerprinting.
 - **Single forward horizon:** only 5-day direction tested. Other horizons (1d, 20d, 60d) likely have different signal-to-noise.
 - **No transaction costs / position sizing:** ROC-AUC alone is not a Sharpe ratio. A backtest with realistic costs would assess economic significance.
-- **AUC lift not significance-tested:** the +0.0027 average AUC delta is consistent but small; bootstrap or DeLong tests would confirm whether it's statistically distinguishable from zero.
+- **AUC lift not significance-tested:** the +0.0049 average AUC delta is consistent but small; bootstrap or DeLong tests would confirm whether it's statistically distinguishable from zero.
 - **Could add fundamentals or sentiment** (P/E, earnings surprise, news sentiment) as additional features.
 
 ---

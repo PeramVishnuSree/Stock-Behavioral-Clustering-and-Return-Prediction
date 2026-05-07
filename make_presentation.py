@@ -273,7 +273,8 @@ def slide_04_research_question(prs, D):
                   Inches(7.0), Inches(y), Inches(6), Inches(0.4), 16, True, BLUE)
     _add_textbox(s,
         "Do technical indicators, augmented with behavioral cluster labels from RQ1, "
-        "improve classification accuracy for predicting whether a stock's 5-day forward return is positive?",
+        "improve classification performance — specifically ROC-AUC — for predicting whether "
+        "a stock's 5-day forward return is positive?",
         Inches(7.0), Inches(y + 0.5), Inches(6), Inches(2.0), 12, False, DGRAY)
     _add_footer(s, 4)
 
@@ -284,9 +285,9 @@ def slide_05_motivation(prs):
                   "When a single narrative dominates, sectors stop describing behavior")
     # Three example pairs — corrected return numbers
     pairs = [
-        ("NVDA (Nvidia)",            "Information Technology", "+239%", "2023", BLUE),
-        ("CEG (Constellation Energy)", "Utilities",              "+93%",  "2024", AMBER),
-        ("VST (Vistra)",              "Utilities",              "+258%", "2024", GREEN),
+        ("NVDA (Nvidia)",            "Information Technology", "+239%",   "2023", BLUE),
+        ("CEG (Constellation Energy)", "Utilities",              "~+91%",  "2024", AMBER),
+        ("VST (Vistra)",              "Utilities",              "~+258%", "2024", GREEN),
     ]
     _add_textbox(s, "Three stocks that moved together for the same AI-infrastructure reason — across IT and Utilities sectors:",
                   Inches(0.5), Inches(2.0), Inches(12), Inches(0.5), 14, False, DGRAY)
@@ -517,7 +518,8 @@ def slide_10_features_technical(prs):
 def slide_11_features_fingerprint(prs, D):
     s = _new_slide(prs)
     _add_header(s, "05 · FEATURE ENGINEERING — PART 2", "Behavioral fingerprint (per stock)",
-                  "Each stock collapses 5 years of daily data into a single 7-feature vector")
+                  "Each stock collapses its 2019–2022 training window into a single 7-feature vector "
+                  "(leakage-free for downstream classification)")
     fp_features = [
         ("mean_excess_return", "Average alpha — outperformance vs market"),
         ("volatility", "Std dev of daily excess returns"),
@@ -547,11 +549,11 @@ def slide_11_features_fingerprint(prs, D):
                   Inches(7.5), Inches(2.8), Inches(5), Inches(0.4),
                   13, True, BLUE)
     pipeline_steps = [
-        "1.  ~1,500 days × 8 indicators per stock",
+        "1.  ~1,000 train days × 8 indicators per stock",
         "2.  Aggregate to means / std / max",
         "3.  Winsorize 1st / 99th percentile",
         "4.  StandardScaler normalize",
-        "5.  Cluster on this 7-D vector",
+        "5.  Cluster on this 7-D vector (leakage-free)",
     ]
     yp = 3.3
     for step in pipeline_steps:
@@ -846,8 +848,8 @@ def slide_18_cluster_vs_sector(prs, D):
                       Inches(9.0), Inches(3.7), Inches(3.6))
     _add_metric_card(s, f"{sil_kmeans:.3f}", "K-Means silhouette",
                       Inches(9.0), Inches(4.9), Inches(3.6))
-    _add_textbox(s, "ARI = 0 → independent · ARI = 1 → identical",
-                  Inches(9.0), Inches(6.1), Inches(3.7), Inches(0.5), 10, False, GRAY)
+    _add_textbox(s, "ARI near 0 = close to random agreement · 1 = identical · can be negative for highly discordant",
+                  Inches(9.0), Inches(6.1), Inches(3.7), Inches(0.7), 9, False, GRAY)
     _add_footer(s, 18)
 
 
@@ -991,7 +993,7 @@ def slide_21_model_comparison(prs, D):
 def slide_22_feature_importance(prs, D):
     s = _new_slide(prs)
     _add_header(s, "08 · CLASSIFICATION", "What features drive the prediction?",
-                  "Random Forest feature importance — RSI and momentum dominate")
+                  "Random Forest feature importance — risk, volatility, and volume dominate")
 
     feat_imp = D["feat_imp"].head(12).iloc[::-1]
     fig = go.Figure(data=[go.Bar(x=feat_imp["importance"], y=feat_imp["feature"], orientation="h",
